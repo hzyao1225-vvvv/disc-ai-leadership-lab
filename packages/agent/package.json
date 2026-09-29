@@ -1,0 +1,45 @@
+{
+  "name": "@disc-lab/agent",
+  "version": "2.0.0",
+  "description": "DISC × AI 镜像实验室 - AI 员工 Agent 核心",
+  "type": "module",
+  "main": "./dist/agent.js",
+  "types": "./dist/agent.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/agent.d.ts",
+      "import": "./dist/agent.js"
+    },
+    "./personas": {
+      "types": "./dist/personas.d.ts",
+      "import": "./dist/personas.js"
+    },
+    "./scenes": {
+      "types": "./dist/scenes.d.ts",
+      "import": "./dist/scenes.js"
+    },
+    "./evaluator": {
+      "types": "./dist/evaluator.d.ts",
+      "import": "./dist/evaluator.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "test:poc": "tsx --env-file=../../.env tests/poc/poc-runner.ts",
+    "test:w4": "tsx --env-file=../../.env tests/w4/w4-runner.ts",
+    "test:json": "tsx tests/poc/json-stability.test.ts",
+    "test:state": "tsx tests/poc/state-machine.test.ts",
+    "test:hidden": "tsx tests/poc/hidden-layers.test.ts",
+    "test:persona": "tsx tests/poc/persona-diff.test.ts"
+  },
+  "dependencies": {
+    "openai": "^4.28.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

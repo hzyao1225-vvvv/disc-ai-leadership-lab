@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DISC × AI 镜像实验室 - 语音测试</title>
+  <!-- @ricky0123/vad-web + onnxruntime-web（jsdelivr CDN，unpkg 在公司网络常被拦截） -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/bundle.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a1f29;
+      --border: #2a3142;
+      --text: #e6e6e6;
+      --muted: #8a93a6;
+      --accent: #4a9eff;
+      --green: #4ade80;
+      --orange: #fbbf24;
+      --red: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+      padding: 1.5rem;
+      line-height: 1.5;
+    }
+    h1 { margin: 0 0 0.5rem; font-size: 1.25rem; }
+    h1 small { color: var(--muted); font-size: 0.85rem; font-weight: normal; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; max-width: 1100px; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .panel h2 { margin: 0 0 0.75rem; font-size: 1rem; color: var(--accent); }
+    label { display: block; margin: 0.5rem 0 0.15rem; font-size: 0.85rem; color: var(--muted); }
+    select, input {
+      width: 100%;
+      background: #0d1117;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.9rem;
+    }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin: 0.4rem 0.4rem 0 0;
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.secondary { background: #2a3142; }
+    button.danger { background: var(--red); }
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: #0d1117;
+      border-radius: 4px;
+      margin: 0.5rem 0;
+      font-size: 0.9rem;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .dot.voice { background: var(--green); }
+    .dot.text { background: var(--orange); }
+    .dot.voice-degraded { background: var(--red); }
+    .dot.unknown { background: var(--muted); }
+    #dialog {
+      height: 380px;
+      overflow-y: auto;
+      background: #0d1117;
+      border-radius: 4px;
+      padding: 0.75rem;
+      font-size: 0.9rem;
+    }
+    .msg { margin: 0.4rem 0; padding: 0.5rem 0.75rem; border-radius: 6px; word-wrap: break-word; }
+    .msg.leader { background: #1a2638; border-left: 3px solid var(--accent); }
+    .msg.employee { background: #1f2937; border-left: 3px solid var(--green); }
+    .msg.partial { color: var(--muted); font-style: italic; }
+    .msg.system { color: var(--orange); font-size: 0.8rem; }
+    .msg .meta { color: var(--muted); font-size: 0.75rem; margin-top: 0.2rem; }
+    .text-input-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .text-input-row input { flex: 1; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin: 0.3rem 0; }
+    .vad-state { font-size: 0.8rem; color: var(--muted); }
+    .recording { color: var(--red); animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0.3; } }
+    textarea {
+      width: 100%;
+      background: #0d1117;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.85rem;
+      font-family: inherit;
+      line-height: 1.45;
+      resize: vertical;
+    }
+    textarea:disabled { opacity: 0.5; cursor: not-allowed; }
+    .eval-panel {
+      margin-top: 0.75rem;
+      padding: 0.75rem;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .eval-total {
+      font-size: 1.6rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-right: 0.5rem;
+    }
+    .eval-dim { margin: 0.4rem 0; padding: 0.3rem 0; border-bottom: 1px dashed var(--border); }
+    .eval-dim:last-child { border-bottom: none; }
+    .eval-dim-label { color: var(--muted); font-size: 0.8rem; }
+    .eval-dim-score { color: var(--green); font-weight: 600; margin: 0 0.4rem; }
+    .eval-section { margin-top: 0.5rem; }
+    .eval-section-title { color: var(--accent); font-size: 0.8rem; margin: 0.3rem 0 0.15rem; }
+    .eval-list { margin: 0; padding-left: 1rem; }
+    .eval-list li { margin: 0.15rem 0; }
+  </style>
+</head>
+<body>
+  <h1>DISC × AI 镜像实验室 <small>· W5 语音交互测试</small></h1>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>会话配置</h2>
+      <label for="scene">场景</label>
+      <select id="scene">
+        <option value="perf_review_v1">A · 季度绩效面谈</option>
+        <option value="goal_set_v1">B · 年度目标设定</option>
+        <option value="conflict_v1">C · 跨部门冲突调解</option>
+        <option value="coaching_v1">D · 职业发展辅导</option>
+      </select>
+      <label for="persona">员工角色</label>
+      <select id="persona">
+        <option value="zhang_jun">张峻 · D型 · 产业地产副总监</option>
+        <option value="liu_yang">刘洋 · D型 · 招商总监</option>
+        <option value="lin_wanqing">林婉清 · I型 · 品牌市场总监</option>
+        <option value="sun_ying">孙莹 · I型 · 招商负责人</option>
+        <option value="chen_siyuan">陈思远 · S型 · 客户成功经理</option>
+        <option value="zhou_lei">周磊 · S型 · 物业运营总监</option>
+        <option value="wang_zhe">王哲 · C型 · 高级数据分析师</option>
+        <option value="zhao_xiaowen">赵晓雯 · C型 · 财务控制总监</option>
+      </select>
+      <label for="sessionBg">会话背景 <small style="color:var(--muted)">(可在开始前编辑；开始后锁定)</small></label>
+      <textarea id="sessionBg" rows="3" placeholder="场景背景将在此自动填充，可编辑覆盖"></textarea>
+      <label for="sessionGoal">会话目标 <small style="color:var(--muted)">(可在开始前编辑；开始后锁定)</small></label>
+      <textarea id="sessionGoal" rows="2" placeholder="会话目标将在此自动填充，可编辑覆盖"></textarea>
+      <div class="status-bar">
+        <span class="dot unknown" id="modeDot"></span>
+        <span id="modeText">未连接</span>
+        <span class="vad-state" id="vadState"></span>
+      </div>
+      <div>
+        <button id="startBtn">开始语音会话</button>
+        <button id="stopBtn" class="secondary" disabled>停止</button>
+        <button id="retryMicBtn" class="secondary" disabled>重试麦克风</button>
+        <button id="switchTextBtn" class="secondary" disabled>切文字模式</button>
+      </div>
+      <div class="hint">语音模式：自动检测说话结束（VAD），自动提交 ASR；TTS 播放期间麦克风静音防回灌。</div>
+      <div class="hint">文字模式：降级时自动启用，按回车提交。</div>
+    </div>
+
+    <div class="panel">
+      <h2>对话</h2>
+      <div id="dialog"></div>
+      <div class="text-input-row" id="textRow">
+        <input id="textInput" type="text" placeholder="输入对员工说的话，回车提交" />
+        <button id="sendTextBtn">发送</button>
+      </div>
+      <div style="margin-top:0.5rem">
+        <button id="evalBtn" class="secondary" disabled>请求评价</button>
+        <span class="hint" id="evalHint">进行 4+ 轮对话后可请求评价</span>
+      </div>
+      <div id="evalPanel" class="eval-panel" style="display:none"></div>
+    </div>
+  </div>
+
+  <script>
+    // ============== 全局状态 ==============
+    const state = {
+      ws: null,
+      mode: 'voice',         // voice / text / voice-degraded
+      vad: null,             // vad 实例
+      speaking: false,       // TTS 播放中
+      sessionStarted: false, // 是否已 start
+      audioCtx: null,
+      pendingAudio: [],      // TTS 播放队列（PCM ArrayBuffer）
+      currentSource: null,
+      resumeTimer: null,     // VAD 恢复定时器 id（新播放到来时取消，防竞态）
+      sceneDefaults: {},     // sceneId → { sessionBackgroundDefault, sessionGoalDefault }
+      roundCount: 0,         // 已收到 reply 轮数（用于启用「请求评价」按钮）
+      userEditedBg: false,   // 用户是否手动编辑过 bg（true 时切换场景不覆盖）
+      userEditedGoal: false,
+    };
+
+    // ============== DOM ==============
+    const $ = (id) => document.getElementById(id);
+    const sceneSel = $('scene');
+    const personaSel = $('persona');
+    const sessionBg = $('sessionBg');
+    const sessionGoal = $('sessionGoal');
+    const startBtn = $('startBtn');
+    const stopBtn = $('stopBtn');
+    const retryMicBtn = $('retryMicBtn');
+    const switchTextBtn = $('switchTextBtn');
+    const modeDot = $('modeDot');
+    const modeText = $('modeText');
+    const vadState = $('vadState');
+    const dialog = $('dialog');
+    const textRow = $('textRow');
+    const textInput = $('textInput');
+    const sendTextBtn = $('sendTextBtn');
+    const evalBtn = $('evalBtn');
+    const evalHint = $('evalHint');
+    const evalPanel = $('evalPanel');
+
+    // ============== 会话背景/目标：默认值拉取 + 锁定 ==============
+
+    async function loadSceneDefaults() {
+      try {
+        const res = await fetch('/scene-defaults');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const arr = await res.json();
+        state.sceneDefaults = {};
+        for (const s of arr) {
+          state.sceneDefaults[s.id] = {
+            sessionBackgroundDefault: s.sessionBackgroundDefault || '',
+            sessionGoalDefault: s.sessionGoalDefault || '',
+          };
+        }
+        // 触发 textarea 填充（按当前选中场景）
+        fillSessionDefaultsForCurrentScene();
+      } catch (err) {
+        console.warn('[scene-defaults] 拉取失败:', err.message);
+      }
+    }
+    function fillSessionDefaultsForCurrentScene() {
+      const sid = sceneSel.value;
+      const def = state.sceneDefaults[sid];
+      if (!def) return;
+      // 用户未手动编辑时，跟随场景切换覆盖；已编辑则保留用户值
+      if (!state.userEditedBg) sessionBg.value = def.sessionBackgroundDefault || '';
+      if (!state.userEditedGoal) sessionGoal.value = def.sessionGoalDefault || '';
+    }
+    function setSessionStarted(started) {
+      state.sessionStarted = started;
+      // 会话开始后锁定 textarea，避免中途换值触发新桶丢历史
+      sessionBg.disabled = started;
+      sessionGoal.disabled = started;
+    }
+    const EVAL_MIN_ROUNDS = 4; // 至少 4 轮互动后才开放评价，保证评估有足够对话依据
+    function updateEvalBtn() {
+      if (state.sessionStarted && state.roundCount >= EVAL_MIN_ROUNDS) {
+        evalBtn.disabled = false;
+        evalHint.textContent = '点击后由 AI 给出本次会话的结构化评价';
+      } else {
+        evalBtn.disabled = true;
+        evalHint.textContent = state.sessionStarted
+          ? `还需 ${EVAL_MIN_ROUNDS - state.roundCount} 轮对话后可请求评价`
+          : '请先开始会话';
+      }
+    }
+    // 用户手动编辑 textarea 时打标，避免场景切换被覆盖
+    sessionBg.addEventListener('input', () => { state.userEditedBg = true; });
+    sessionGoal.addEventListener('input', () => { state.userEditedGoal = true; });
+    // 场景切换：重置编辑标记 + 填充新场景默认值
+    sceneSel.addEventListener('change', () => {
+      state.userEditedBg = false;
+      state.userEditedGoal = false;
+      fillSessionDefaultsForCurrentScene();
+    });
+
+    // ============== 工具 ==============
+    function addMsg(role, text, meta) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
+      div.textContent = text;
+      if (meta) {
+        const m = document.createElement('div');
+        m.className = 'meta';
+        m.textContent = meta;
+        div.appendChild(m);
+      }
+      dialog.appendChild(div);
+      dialog.scrollTop = dialog.scrollHeight;
+    }
+    function setMode(mode, reason) {
+      state.mode = mode;
+      modeDot.className = 'dot ' + mode;
+      modeText.textContent = mode + (reason ? ' · ' + reason : '');
+      // 文字输入框始终可见（语音模式下也可打字备选）
+      textRow.style.display = 'flex';
+      if (mode === 'text' && state.vad) {
+        try { state.vad.pause(); } catch {}
+      }
+    }
+    function wsUrl() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      return `${proto}://${location.host}/voice`;
+    }
+
+    // ============== WebSocket 客户端 ==============
+    function connectWs() {
+      const ws = new WebSocket(wsUrl());
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = () => {
+        addMsg('system', 'WebSocket 已连接');
+      };
+      ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          // TTS 音频帧（PCM Int16 16k）
+          enqueueAudio(ev.data);
+          return;
+        }
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        handleServerMessage(msg);
+      };
+      ws.onclose = () => {
+        addMsg('system', 'WebSocket 已断开');
+        state.ws = null;
+        if (state.sessionStarted) {
+          // 网络中断，切文字
+          setMode('text', '网络中断');
+        }
+      };
+      ws.onerror = () => {
+        addMsg('system', 'WebSocket 错误');
+      };
+      state.ws = ws;
+    }
+    function sendJson(msg) {
+      if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify(msg));
+      } else if (msg.type !== 'dbg') {
+        addMsg('system', `⚠️ ws 未打开，消息被丢弃: ${msg.type}`);
+      }
+    }
+    function sendBinary(buf) {
+      if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+        state.ws.send(buf);
+      } else {
+        addMsg('system', `⚠️ ws 未打开，音频被丢弃: ${buf.byteLength}B`);
+      }
+    }
+    /**
+     * 分块发送 PCM：把大段 Int16 PCM ArrayBuffer 切成 <= PCM_CHUNK_BYTES 的小块依次发送。
+     * 原因：VAD 对长段独白（静音检测未及时切段）会累积整段音频，单帧超过 1MB
+     * （16k/16bit 下 ≈32.8s）会触发 WebSocket 对端 1009 "Max frame length 1048576" 关闭。
+     * 服务端对 binary 帧逐帧透传 ASR 且连接内串行保序，分块对 ASR 重组完全透明。
+     */
+    const PCM_CHUNK_BYTES = 8192; // 4096 samples = 256ms @16kHz/16bit，远低于 1MB
+    function sendPcmChunked(pcmBuffer) {
+      const total = pcmBuffer.byteLength;
+      if (total <= PCM_CHUNK_BYTES) {
+        sendBinary(pcmBuffer);
+        return 1;
+      }
+      let offset = 0;
+      let chunks = 0;
+      while (offset < total) {
+        const end = Math.min(offset + PCM_CHUNK_BYTES, total);
+        // ArrayBuffer.slice 返回切区间副本，端点按字节对齐（PCM_CHUNK_BYTES 为偶数，sample 对齐）
+        sendBinary(pcmBuffer.slice(offset, end));
+        offset = end;
+        chunks++;
+      }
+      return chunks;
+    }
+    /** 统一构造 start 消息（带上当前 textarea 的 bg/goal） */
+    function sendStart(mode) {
+      sendJson({
+        type: 'start',
+        sceneId: sceneSel.value,
+        personaId: personaSel.value,
+        mode,
+        sessionBackground: sessionBg.value,
+        sessionGoal: sessionGoal.value,
+      });
+    }
+
+    function handleServerMessage(msg) {
+      switch (msg.type) {
+        case 'asr-partial':
+          // 增量文本，更新占位 partial 气泡
+          let partial = dialog.querySelector('.msg.partial');
+          if (!partial) {
+            partial = document.createElement('div');
+            partial.className = 'msg partial';
+            dialog.appendChild(partial);
+          }
+          partial.textContent = '🎤 ' + msg.text;
+          dialog.scrollTop = dialog.scrollHeight;
+          break;
+        case 'asr-final':
+          // 句末完整：把 partial 升级为正式 leader 消息
+          const p = dialog.querySelector('.msg.partial');
+          if (p) p.remove();
+          addMsg('leader', msg.text);
+          break;
+        case 'reply':
+          addMsg('employee', msg.text, `情绪:${msg.emotion} · 轮次:${msg.round}`);
+          state.roundCount = msg.round;
+          updateEvalBtn();
+          break;
+        case 'audio-end':
+          // 后端 TTS 合成完成。VAD 恢复由前端 onended 实际播放完毕触发。
+          // 此处仅兜底：无音频在播时（TTS 抛错/空回复），恢复 VAD。
+          if (!state.speaking) {
+            resumeVadAfterDelay();
+          }
+          break;
+        case 'mode':
+          setMode(msg.mode, msg.reason);
+          break;
+        case 'evaluation':
+          renderEvaluation(msg.result);
+          break;
+        case 'error':
+          addMsg('system', '错误: ' + msg.message);
+          break;
+        case 'pong':
+          break;
+      }
+    }
+
+    // ============== 评价结果渲染 ==============
+    const PASS_LEVEL_META = {
+      excellent: { text: '优秀通关', color: 'var(--green)' },
+      qualified: { text: '合格通关', color: 'var(--orange)' },
+      fail: { text: '未通关', color: 'var(--red)' },
+      unknown: { text: '', color: 'var(--muted)' },
+    };
+    function renderEvaluation(result) {
+      // 评价完成后恢复按钮，允许用户在继续对话后再次请求评价
+      evalBtn.disabled = false;
+      evalHint.textContent = '可继续对话后再次请求评价';
+      evalPanel.style.display = 'block';
+      const dimsHtml = (result.dimensions || [])
+        .map((d) =>
+          `<div class="eval-dim">
+            <span class="eval-dim-label">${d.label || d.key}</span>
+            <span class="eval-dim-score">${d.score}</span>
+            <span>${d.comment || ''}</span>
+          </div>`)
+        .join('');
+      const extraHtml = (result.extraMetrics || [])
+        .map((d) =>
+          `<div class="eval-dim">
+            <span class="eval-dim-label">${d.label || d.key}</span>
+            <span class="eval-dim-score">${d.score}</span>
+            <span>${d.comment || ''}</span>
+          </div>`)
+        .join('');
+      const strengths = (result.strengths || [])
+        .map((s) => `<li>${s}</li>`).join('');
+      const improvements = (result.improvements || [])
+        .map((s) => `<li>${s}</li>`).join('');
+      const passMeta = PASS_LEVEL_META[result.passLevel] || PASS_LEVEL_META.unknown;
+      const passBadge = passMeta.text
+        ? `<span style="float:right;padding:0.1rem 0.6rem;border-radius:10px;background:${passMeta.color};color:#0f1419;font-size:0.8rem;font-weight:600">${passMeta.text}</span>`
+        : '';
+      const sectionsHtml = (result.reportSections || [])
+        .map(
+          (s) =>
+            `<div class="eval-section">
+              <div class="eval-section-title">${s.title}</div>
+              <div style="white-space:pre-wrap">${s.content}</div>
+            </div>`
+        )
+        .join('');
+      evalPanel.innerHTML = `
+        <div style="margin-bottom:0.5rem">
+          ${passBadge}
+          <span class="eval-total">${result.totalScore ?? '-'}</span>
+          <span class="eval-dim-label">总分 / 100</span>
+        </div>
+        ${dimsHtml || '<div class="eval-dim-label">（无维度分项）</div>'}
+        ${extraHtml ? `<div class="eval-section-title" style="margin-top:0.5rem">附加指数（不计入总分）</div>${extraHtml}` : ''}
+        <div class="eval-section">
+          <div class="eval-section-title">整体反馈</div>
+          <div style="white-space:pre-wrap">${result.feedback || ''}</div>
+        </div>
+        ${strengths ? `<div class="eval-section">
+          <div class="eval-section-title">优点</div>
+          <ul class="eval-list">${strengths}</ul>
+        </div>` : ''}
+        ${improvements ? `<div class="eval-section">
+          <div class="eval-section-title">改进点</div>
+          <ul class="eval-list">${improvements}</ul>
+        </div>` : ''}
+        ${sectionsHtml}
+      `;
+    }
+
+    // ============== 音频播放（PCM Int16 16k → Float32） ==============
+    function ensureAudioCtx() {
+      if (!state.audioCtx) {
+        state.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      }
+      return state.audioCtx;
+    }
+    function enqueueAudio(pcmInt16ArrayBuffer) {
+      // 会话已停止/ws 关闭中：丢弃迟到的 TTS 音频帧，避免停止后又被重新播放
+      if (!state.sessionStarted || !state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+      const ctx = ensureAudioCtx();
+      const int16 = new Int16Array(pcmInt16ArrayBuffer);
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+      const audioBuf = ctx.createBuffer(1, float32.length, 16000);
+      audioBuf.copyToChannel(float32, 0);
+      state.pendingAudio.push(audioBuf);
+      if (!state.speaking) playNext();
+    }
+    function playNext() {
+      const next = state.pendingAudio.shift();
+      if (!next) {
+        state.speaking = false;
+        resumeVadAfterDelay();
+        return;
+      }
+      state.speaking = true;
+      // 新播放开始：取消待定的 VAD 恢复定时器（防竞态：恢复定时器在播放中触发会回灌）
+      clearTimeout(state.resumeTimer);
+      // VAD 暂停防回灌
+      if (state.vad && state.mode === 'voice') {
+        try { state.vad.pause(); } catch {}
+        vadState.textContent = '🔊 TTS 播放中';
+        sendJson({ type: 'dbg', ev: 'vadPause' });
+      }
+      const ctx = ensureAudioCtx();
+      const src = ctx.createBufferSource();
+      src.buffer = next;
+      src.connect(ctx.destination);
+      src.onended = () => {
+        if (state.pendingAudio.length > 0) {
+          playNext();
+        } else {
+          state.speaking = false;
+          // 所有音频实际播放完毕，200ms 后恢复 VAD（防回灌）
+          resumeVadAfterDelay();
+        }
+      };
+      src.start();
+      state.currentSource = src;
+    }
+
+    /**
+     * 立即停止 TTS 播放：取消待定恢复定时器、清空待播队列、停掉当前音频源。
+     * 关键：先摘掉 onended 再 stop()，避免 stop 触发 onended 后又 playNext/恢复 VAD。
+     */
+    function stopPlayback() {
+      clearTimeout(state.resumeTimer);
+      state.pendingAudio.length = 0;
+      if (state.currentSource) {
+        try {
+          state.currentSource.onended = null;
+          state.currentSource.stop();
+        } catch {}
+        state.currentSource = null;
+      }
+      state.speaking = false;
+    }
+
+    /** 500ms 延迟后恢复 VAD 监听（等扬声器残余声波消散）；新播放会取消待定恢复 */
+    // 注意：vad-web 0.0.31 没有 resume() 方法！恢复监听必须再调 start()
+    // （initialized 分支会重新 getUserMedia 并重连音频图）。resume() 会抛 TypeError。
+    function resumeVadAfterDelay() {
+      clearTimeout(state.resumeTimer);
+      state.resumeTimer = setTimeout(() => {
+        if (state.vad && state.mode === 'voice') {
+          try {
+            state.vad.start().catch((e) => addMsg('system', 'VAD 恢复失败: ' + e.message));
+          } catch {}
+          vadState.textContent = '麦克风监听中';
+          sendJson({ type: 'dbg', ev: 'vadResume' });
+        }
+      }, 500);
+    }
+
+    // ============== VAD ==============
+    // onnx/wasm 资源从 jsdelivr 加载（避免本地路径 404）
+    const VAD_CDN = 'https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.31/dist/';
+    const ONNX_CDN = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+
+    /** Float32Array (16kHz) → Int16Array PCM ArrayBuffer，发给后端 ASR */
+    function float32ToInt16Pcm(float32) {
+      const int16 = new Int16Array(float32.length);
+      for (let i = 0; i < float32.length; i++) {
+        let s = Math.max(-1, Math.min(1, float32[i]));
+        int16[i] = s < 0 ? s * 32768 : s * 32767;
+      }
+      return int16.buffer.slice(int16.byteOffset, int16.byteOffset + int16.byteLength);
+    }
+
+    async function initVad() {
+      try {
+        const vad = await window.vad.MicVAD.new({
+          positiveSpeechThreshold: 0.5,
+          negativeSpeechThreshold: 0.5 - 0.15,
+          minSpeechFrames: 3,
+          preSpeechPadFrames: 1,
+          redemptionFrames: 24,
+          frameSamples: 1536,
+          onnxWASMBasePath: ONNX_CDN,
+          baseAssetPath: VAD_CDN,
+          onSpeechStart: () => {
+            vadState.textContent = '🎙️ 说话中';
+            vadState.classList.add('recording');
+            sendJson({ type: 'dbg', ev: 'speechStart' });
+            // 通知后端一段语音开始（重置/启动 ASR 会话）
+            sendStart(state.mode);
+          },
+          onSpeechEnd: (audio) => {
+            vadState.textContent = '处理中...';
+            vadState.classList.remove('recording');
+            // audio: Float32Array of 16kHz samples → 转 Int16 PCM 发后端
+            const durationSec = audio.length / 16000;
+            const pcm = float32ToInt16Pcm(audio);
+            // 分块发送，避免长段独白（>32s ≈ 1MB PCM）触发单帧 1009 限制
+            const chunkCount = sendPcmChunked(pcm);
+            console.log(`[vad] speechEnd duration=${durationSec.toFixed(1)}s bytes=${pcm.byteLength} chunks=${chunkCount}`);
+            sendJson({ type: 'dbg', ev: 'speechEnd', bytes: pcm.byteLength, chunks: chunkCount });
+            // 通知后端一段语音结束（触发 ASR finish → agent.respond → TTS）
+            // WebSocket 保序：所有 chunk 均在本帧之前已入队
+            sendJson({ type: 'audio-end' });
+          },
+          onFrameProcessed: () => {},
+          onVADMisfire: () => {},
+        });
+        state.vad = vad;
+        return true;
+      } catch (err) {
+        addMsg('system', 'VAD 加载失败: ' + err.message + '（请用现代浏览器访问，允许麦克风权限，并确认网络可达 jsdelivr CDN）');
+        return false;
+      }
+    }
+
+    // ============== 事件绑定 ==============
+    startBtn.addEventListener('click', async () => {
+      if (!state.ws) connectWs();
+      // 等 ws 连上
+      const waitOpen = () => new Promise((res) => {
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) return res();
+        const check = () => {
+          if (state.ws && state.ws.readyState === WebSocket.OPEN) res();
+          else setTimeout(check, 50);
+        };
+        check();
+      });
+      await waitOpen();
+
+      // 麦克风权限检查
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop()); // 仅做权限探测
+      } catch (err) {
+        addMsg('system', '麦克风权限被拒，切文字模式');
+        setMode('text', '麦克风被拒');
+        sendStart('text');
+        setSessionStarted(true);
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        switchTextBtn.disabled = true;
+        return;
+      }
+
+      const ok = await initVad();
+      if (!ok) {
+        setMode('text', 'VAD 加载失败');
+        sendStart('text');
+        setSessionStarted(true);
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        return;
+      }
+
+      // 不预先发 start：由 VAD onSpeechStart 触发（每段语音开始时启动 ASR 会话）
+      setSessionStarted(true);
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      retryMicBtn.disabled = false;
+      switchTextBtn.disabled = false;
+      try { state.vad.start(); vadState.textContent = '麦克风监听中'; } catch (err) {
+        addMsg('system', 'VAD 启动失败: ' + err.message);
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      // 先立即停止 TTS 播放（当前音频源 + 待播队列），再销毁 VAD、关 ws
+      stopPlayback();
+      if (state.vad) {
+        try { state.vad.pause(); } catch {}
+        try { state.vad.destroy(); } catch {}
+        state.vad = null;
+      }
+      if (state.ws) {
+        try { state.ws.close(); } catch {}
+      }
+      setSessionStarted(false);
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      retryMicBtn.disabled = true;
+      switchTextBtn.disabled = true;
+      vadState.textContent = '';
+      setMode('voice', '已停止');
+    });
+
+    retryMicBtn.addEventListener('click', async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+        if (!state.vad) await initVad();
+        if (state.vad) {
+          try { state.vad.start(); setMode('voice', '麦克风重试成功'); } catch (err) {
+            addMsg('system', 'VAD 重启失败: ' + err.message);
+          }
+        }
+      } catch (err) {
+        addMsg('system', '麦克风重试失败: ' + err.message);
+      }
+    });
+
+    switchTextBtn.addEventListener('click', () => {
+      sendJson({ type: 'switch-mode', mode: 'text' });
+      setMode('text', '用户手动切换');
+      if (state.vad) { try { state.vad.pause(); } catch {} }
+    });
+
+    async function submitText() {
+      const text = textInput.value.trim();
+      if (!text) return;
+      // 确保 ws 已连接
+      if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+        connectWs();
+        await new Promise((res) => {
+          const check = () => {
+            if (state.ws && state.ws.readyState === WebSocket.OPEN) res();
+            else setTimeout(check, 50);
+          };
+          check();
+        });
+      }
+      // 确保文字会话已 start（无论用户是否点过"开始语音会话"）
+      if (!state.sessionStarted || state.mode !== 'text') {
+        sendStart('text');
+        setSessionStarted(true);
+        setMode('text', '文字会话');
+      }
+      addMsg('leader', text);
+      sendJson({ type: 'text', content: text });
+      textInput.value = '';
+    }
+    sendTextBtn.addEventListener('click', submitText);
+    textInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submitText(); }
+    });
+
+    // ============== 评价按钮 ==============
+    evalBtn.addEventListener('click', () => {
+      if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+        addMsg('system', 'WebSocket 未连接，无法请求评价');
+        return;
+      }
+      evalBtn.disabled = true;
+      evalHint.textContent = 'AI 评价中…';
+      sendJson({ type: 'evaluate' });
+    });
+
+    // ============== 初始化 ==============
+    setMode('voice', '未开始');
+    addMsg('system', '点击「开始语音会话」启动。需要允许麦克风权限。');
+    // 连接 ws（用于提前显示连接状态）
+    connectWs();
+    // 拉取场景默认 bg/goal
+    loadSceneDefaults();
+    updateEvalBtn();
+  </script>
+</body>
+</html>
