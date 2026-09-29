@@ -1,0 +1,28 @@
+{
+  "name": "disc-ai-leadership-lab",
+  "private": true,
+  "version": "2.0.0",
+  "description": "DISC × AI 镜像实验室 - 企业领导力培训产品 (PoC 验证版)",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "poc": "pnpm --filter @disc-lab/agent dev",
+    "test:poc": "pnpm --filter @disc-lab/agent test:poc",
+    "test:w4": "pnpm --filter @disc-lab/agent test:w4",
+    "dev:voice": "pnpm --filter @disc-lab/voice dev",
+    "test:w5": "pnpm --filter @disc-lab/voice test:mapper && pnpm --filter @disc-lab/voice test:tts && pnpm --filter @disc-lab/voice test:asr && pnpm --filter @disc-lab/voice test:degradation && pnpm --filter @disc-lab/voice test:pipeline",
+    "test:e2e": "pnpm --filter @disc-lab/voice test:e2e",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.11.0",
+    "prettier": "^3.2.0",
+    "eslint": "^8.57.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@12.5.1"
+}

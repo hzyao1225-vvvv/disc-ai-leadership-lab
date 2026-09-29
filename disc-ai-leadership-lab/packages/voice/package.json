@@ -1,0 +1,35 @@
+{
+  "name": "@disc-lab/voice",
+  "version": "2.0.0",
+  "description": "DISC × AI 镜像实验室 - 语音交互集成（ASR + TTS + VAD）",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/voice-server.ts",
+    "build": "tsc -p tsconfig.json",
+    "test:w5": "tsx --env-file=../../.env tests/w5-runner.ts",
+    "test:mapper": "tsx tests/mapper.test.ts",
+    "test:asr": "tsx tests/asr-mock.test.ts",
+    "test:tts": "tsx tests/tts-mock.test.ts",
+    "test:pipeline": "tsx tests/pipeline.test.ts",
+    "test:degradation": "tsx tests/degradation.test.ts",
+    "test:e2e": "tsx --env-file=../../.env tests/e2e-runner.ts"
+  },
+  "dependencies": {
+    "@disc-lab/agent": "workspace:*",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

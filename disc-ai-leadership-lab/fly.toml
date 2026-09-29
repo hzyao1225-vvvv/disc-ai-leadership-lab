@@ -1,0 +1,48 @@
+# fly.toml - DISC × AI 镜像实验室 voice-server
+# 部署步骤详见 Dockerfile 顶部注释。
+
+app = "disc-ai-leadership-lab"
+primary_region = "hkg"  # 香港，离国内最近；可换 nrt(东京)/sin(新加坡)/lax(洛杉矶)
+
+[build]
+
+# ── 非敏感环境变量（明文） ───────────────────────────
+# 敏感字段（LLM_API_KEY / DASHSCOPE_API_KEY / DASHSCOPE_WORKSPACE_ID）
+# 必须用 `fly secrets set` 注入，不要写在这里！
+[env]
+  VOICE_PORT = "4173"
+  NODE_ENV = "production"
+  LLM_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  LLM_MODEL = "qwen-plus"
+  LLM_MAX_TOKENS = "800"
+  EVAL_MAX_TOKENS = "4096"
+  COSYVOICE_MODEL = "cosyvoice-v3-flash"
+  PARAFORMER_MODEL = "paraformer-realtime-v2"
+  DEBUG_PROMPT = "false"
+  DEBUG_RESPONSE = "false"
+
+[http_service]
+  internal_port = 4173
+  force_https = true
+  # 语音 WebSocket 长连接：不自动停机，保 1 台常驻避免冷启动延迟
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 50
+    soft_limit = 25
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/healthz"
+
+# 资源规格：shared-cpu-1x 512MB（Hobby plan 起步含 3 台）
+# 若内存吃紧（多并发语音会话）可上调到 1024
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = 512
